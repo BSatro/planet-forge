@@ -1,0 +1,44 @@
+{
+  "name": "planet-forge",
+  "emitLegacyScripts": true,
+  "tree": {
+    "$className": "DataModel",
+
+    "ReplicatedStorage": {
+      "$ignoreUnknownInstances": true,
+      "PF_Shared": {
+        "$path": "src/shared"
+      }
+    },
+
+    "ServerScriptService": {
+      "$ignoreUnknownInstances": true,
+      "PF_Server": {
+        "$path": "src/server"
+      }
+    },
+
+    "ServerStorage": {
+      "$ignoreUnknownInstances": true,
+      "PF_Tests": {
+        "$path": "tests"
+      },
+      "PF_DevTools": {
+        "$path": "src/serverstorage/PF_DevTools"
+      },
+      "PF_PersistenceProbe": {
+        "$path": "src/serverstorage/PF_PersistenceProbe.luau"
+      }
+    },
+
+    "StarterPlayer": {
+      "$ignoreUnknownInstances": true,
+      "StarterPlayerScripts": {
+        "$ignoreUnknownInstances": true,
+        "PF_Client": {
+          "$path": "src/client"
+        }
+      }
+    }
+  }
+}

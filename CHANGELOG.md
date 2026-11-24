@@ -2,6 +2,23 @@
 
 Format: newest first. ADR = Architecture Decision Record (Accepted / Proposed / Pending-human).
 
+## 2026-11-24 — M0 repo bootstrap: Rojo project + code extracted from the place
+- Source: `place/planet-forge.rbxl` (local copy, saved 2026-11-24 18:54). Read offline from the file; Studio and the published place were not touched.
+- `default.project.json` maps only the six code containers. `$ignoreUnknownInstances` is set on every service node, so Lighting, `PF_Assets`, `PF_Deprecated`, `PF_SFX`, TextChatService config etc. stay place-owned and are never deleted by a sync.
+
+| Place | Repo |
+|---|---|
+| `ReplicatedStorage.PF_Shared` | `src/shared/` (30 modules) |
+| `ServerScriptService.PF_Server` | `src/server/` (`Main.server.luau` + 47 modules) |
+| `StarterPlayer.StarterPlayerScripts.PF_Client` | `src/client/` (`Main.client.luau` + 67 modules) |
+| `ServerStorage.PF_Tests` | `tests/` (TestRunner + 14 `*.spec`) |
+| `ServerStorage.PF_DevTools` | `src/serverstorage/PF_DevTools/` |
+| `ServerStorage.PF_PersistenceProbe` | `src/serverstorage/PF_PersistenceProbe.luau` |
+
+- Verification: the file tree was rebuilt with Rojo's naming rules (`.server.luau` → Script, `.client.luau` → LocalScript, `.luau` → ModuleScript, dir → Folder) and compared with the place: all 163 sources identical byte-for-byte, same folder layout, no extra or missing instances. Both `Main` scripts are RunContext Legacy, which `emitLegacyScripts: true` preserves. No code container holds attributes, tags or non-script instances, so nothing is lost.
+- The actual layout differs from PROJECT_SPEC §4 (feature folders such as `Harvest/`, `Rift/`, `Planet/` instead of `Contracts/` + `Logic/`). The extraction mirrors the place as-is; renaming to the spec layout is a separate, reviewed change.
+- Not yet in the repo: `PF_Assets` (binary models/meshes/sounds → `assets/*.rbxm`, ADR-002).
+
 ## 2026-11-23 — Planet scale rework: bigger planets, real-scale props, DNA-driven density
 ### Safety
 - Checkpoint saved before any change: place version 142. Work saved as versions 148–149 (Team Create). **Nothing was published.**

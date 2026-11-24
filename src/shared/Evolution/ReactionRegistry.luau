@@ -1,0 +1,480 @@
+--!strict
+-- ReactionRegistry — owner: Developer B. Declarative Planet Reaction definitions (the content of the
+-- evolution engine). NO logic lives here: EvolutionRules evaluates, ReactionEngine applies.
+-- Reaction ids are PERSISTED in the Codex (profile.reactions[id]); never rename a shipped id.
+--
+-- Definition fields
+--   name, description, category ("water"|"thermal"|"crystal"|"life"|"cosmic"|"tuning"|"branch")
+--   branch        related evolution branch (Codex grouping, UI tint). nil = general
+--   cost          { materials = { [materialId]: n }, credits = n? }
+--   requires      condition table (see EvolutionRules.checkConditions):
+--                   dna = { Param = { min?, max? } }, stage = { min?, max? }, branch = id | {ids},
+--                   discovered = { ids }, discoveredAny = { ids = {...}, min = n }, discoveredCount = n,
+--                   formations = { [formationId]: minCount }, level = n
+--   effects       { dna = { Param = delta }, formations = { [formationId]: +count } }
+--   repeats       { mode = "once" | "limited" | "unlimited", max = n }
+--   discoveryReward  first successful completion only: { credits, xp, materials = {...}, cosmetic }
+--   mastery       { requires = condition table, reward = { credits, xp, cosmetic? }, hint }
+--   effect        visual effect id for transformations ("impact","ocean","volcanic","crystal","cosmic",
+--                 "frozen","living","steam","minor")
+--   major         true -> counts towards stage discovery requirements (tuning reactions don't)
+--   preview       { headline }  short UI result description
+
+local ReactionRegistry = {}
+
+local I, M, P, X, B, K = "IceMatter", "MagmaMatter", "PlasmaMatter", "CrystalFragments", "BioEssence", "CosmicCatalyst"
+
+local function mats(t: { [string]: number }): any
+	return { materials = t }
+end
+
+local DEFS: { [string]: any } = {
+	-- CORE 16 -------------------------------------------------------------------------------------------
+	R01 = {
+		name = "First Impact",
+		description = "Hurl Ice Matter at your barren world. It shatters into the first frozen impact site.",
+		category = "water",
+		cost = mats({ [I] = 5 }),
+		requires = {},
+		effects = { dna = { Water = 10, Temperature = -2 }, formations = { IceImpact = 1 } },
+		repeats = { mode = "once" },
+		discoveryReward = { credits = 30, xp = 25 },
+		mastery = { requires = { discovered = { "R02", "R08" } }, reward = { credits = 80, xp = 40 }, hint = "Form an ocean and freeze it." },
+		effect = "impact",
+		preview = { headline = "A frozen crater appears." },
+	},
+	R02 = {
+		name = "Primordial Ocean",
+		description = "Melt Ice Matter into the impact basin while the planet is mild. The first shallow ocean forms.",
+		category = "water",
+		branch = "Living",
+		cost = mats({ [I] = 8 }),
+		requires = { discovered = { "R01" }, dna = { Water = { min = 10 }, Temperature = { min = 15, max = 75 } } },
+		effects = { dna = { Water = 15, Temperature = -2 }, formations = { ShallowOcean = 1 } },
+		repeats = { mode = "limited", max = 2 },
+		discoveryReward = { credits = 60, xp = 40, materials = { [K] = 1 } },
+		mastery = { requires = { formations = { ShallowOcean = 2 }, discovered = { "R09" } }, reward = { credits = 120, xp = 60 }, hint = "Expand the ocean and seed life in it." },
+		effect = "ocean",
+		preview = { headline = "Blue water fills a basin." },
+	},
+	R03 = {
+		name = "Molten Core",
+		description = "Pour Magma Matter into the crust. The core heats up and glowing fractures open.",
+		category = "thermal",
+		branch = "Volcanic",
+		cost = mats({ [M] = 6 }),
+		requires = {},
+		effects = { dna = { Temperature = 12 }, formations = { ThermalCrack = 1 } },
+		repeats = { mode = "once" },
+		discoveryReward = { credits = 30, xp = 25 },
+		mastery = { requires = { discovered = { "R04", "R07" } }, reward = { credits = 80, xp = 40 }, hint = "Erupt the core and make steam." },
+		effect = "volcanic",
+		preview = { headline = "Glowing thermal cracks." },
+	},
+	R04 = {
+		name = "Magma Eruption",
+		description = "Overload a hot crust with Magma Matter until a volcanic vent bursts open.",
+		category = "thermal",
+		branch = "Volcanic",
+		cost = mats({ [M] = 10 }),
+		requires = { discovered = { "R03" }, dna = { Temperature = { min = 55 } } },
+		effects = { dna = { Temperature = 10, CosmicEnergy = 3 }, formations = { LavaPool = 1 } },
+		repeats = { mode = "once" },
+		discoveryReward = { credits = 60, xp = 40, materials = { [K] = 1 } },
+		mastery = { requires = { discovered = { "R15" } }, reward = { credits = 120, xp = 60 }, hint = "Awaken the volcano." },
+		effect = "volcanic",
+		preview = { headline = "A lava vent erupts." },
+	},
+	R05 = {
+		name = "Crystal Seed",
+		description = "Plant Crystal Fragments in the rock. Small glowing mineral clusters take root.",
+		category = "crystal",
+		branch = "Crystal",
+		cost = mats({ [X] = 4 }),
+		requires = {},
+		effects = { dna = { CosmicEnergy = 6 }, formations = { CrystalCluster = 1 } },
+		repeats = { mode = "limited", max = 3 },
+		discoveryReward = { credits = 30, xp = 25 },
+		mastery = { requires = { formations = { CrystalCluster = 3 }, discovered = { "R14" } }, reward = { credits = 120, xp = 60 }, hint = "Grow three clusters and make them resonate." },
+		effect = "crystal",
+		preview = { headline = "Glowing crystals sprout." },
+	},
+	R06 = {
+		name = "Plasma Infusion",
+		description = "Inject Plasma Matter into the crust. Luminous energy veins spread across the rock.",
+		category = "cosmic",
+		branch = "Crystal",
+		cost = mats({ [P] = 6 }),
+		requires = {},
+		effects = { dna = { CosmicEnergy = 12 }, formations = { EnergyVeins = 1 } },
+		repeats = { mode = "limited", max = 3 },
+		discoveryReward = { credits = 40, xp = 30, materials = { [K] = 1 } },
+		mastery = { requires = { discovered = { "R13" }, dna = { CosmicEnergy = { min = 50 } } }, reward = { credits = 120, xp = 60 }, hint = "Push Cosmic Energy past 50 and forge plasma veins." },
+		effect = "cosmic",
+		preview = { headline = "Energy veins light up." },
+	},
+	R07 = {
+		name = "Steam Basin",
+		description = "Heat a watery world with Ice and Magma together. Steaming geothermal pools form.",
+		category = "water",
+		cost = mats({ [I] = 6, [M] = 6 }),
+		requires = { discovered = { "R02" }, dna = { Water = { min = 20 }, Temperature = { min = 60 } } },
+		effects = { dna = { Water = -4, Temperature = -6, Life = 3 }, formations = { SteamPools = 1 } },
+		repeats = { mode = "once" },
+		discoveryReward = { credits = 60, xp = 40 },
+		mastery = { requires = { discovered = { "R09" } }, reward = { credits = 100, xp = 50 }, hint = "Let life emerge near the warm pools." },
+		effect = "steam",
+		preview = { headline = "Steaming geothermal pools." },
+	},
+	R08 = {
+		name = "Frozen Crust",
+		description = "Cool a wet world below freezing and add Ice Matter. Lakes freeze solid.",
+		category = "water",
+		branch = "Frozen",
+		cost = mats({ [I] = 12 }),
+		requires = { discovered = { "R02" }, dna = { Water = { min = 30 }, Temperature = { max = 25 } } },
+		effects = { dna = { Temperature = -5, Water = 5 }, formations = { FrozenLake = 1 } },
+		repeats = { mode = "once" },
+		discoveryReward = { credits = 60, xp = 45 },
+		mastery = { requires = { discovered = { "R12" }, stage = { min = 3 } }, reward = { credits = 120, xp = 60 }, hint = "Raise ice towers and specialize." },
+		effect = "frozen",
+		preview = { headline = "A lake freezes over." },
+	},
+	R09 = {
+		name = "First Life",
+		description = "Seed Bio Essence into mild water. The first vegetation appears.",
+		category = "life",
+		branch = "Living",
+		cost = mats({ [B] = 5, [I] = 4 }),
+		requires = { discovered = { "R02" }, dna = { Water = { min = 25 }, Temperature = { min = 20, max = 65 } } },
+		effects = { dna = { Life = 15, Water = -2 }, formations = { GrassPatches = 1 } },
+		repeats = { mode = "once" },
+		discoveryReward = { credits = 80, xp = 50, materials = { [K] = 1 } },
+		mastery = { requires = { discovered = { "R10", "R11" } }, reward = { credits = 120, xp = 60 }, hint = "Grow a forest and a glowing grove." },
+		effect = "living",
+		preview = { headline = "Green life appears." },
+	},
+	R10 = {
+		name = "Verdant Growth",
+		description = "Feed living water with more Bio Essence. Forests spread across the planet.",
+		category = "life",
+		branch = "Living",
+		cost = mats({ [B] = 8, [I] = 6 }),
+		requires = { discovered = { "R09" }, stage = { min = 2 }, dna = { Life = { min = 15 }, Water = { min = 35 } } },
+		effects = { dna = { Life = 12, Water = -3 }, formations = { FirstForest = 1 } },
+		repeats = { mode = "limited", max = 3 },
+		discoveryReward = { credits = 80, xp = 60 },
+		mastery = { requires = { formations = { FirstForest = 3 } }, reward = { credits = 150, xp = 80 }, hint = "Grow three forests." },
+		effect = "living",
+		preview = { headline = "A forest spreads." },
+	},
+	R11 = {
+		name = "Bioluminescent Bloom",
+		description = "Charge young life with Plasma. Glowing alien plants bloom.",
+		category = "life",
+		branch = "Living",
+		cost = mats({ [B] = 6, [P] = 6 }),
+		requires = { discovered = { "R09" }, dna = { Life = { min = 25 }, CosmicEnergy = { min = 20 } } },
+		effects = { dna = { Life = 5, CosmicEnergy = 5 }, formations = { BioluminescentGrove = 1 } },
+		repeats = { mode = "once" },
+		discoveryReward = { credits = 90, xp = 60 },
+		mastery = { requires = { discovered = { "R16" } }, reward = { credits = 150, xp = 80 }, hint = "Make the celestial flora bloom." },
+		effect = "living",
+		preview = { headline = "Glowing plants bloom." },
+	},
+	R12 = {
+		name = "Aurora Crystal",
+		description = "Freeze Crystal Fragments into cold, charged water. Crystalline ice towers rise.",
+		category = "crystal",
+		branch = "Frozen",
+		cost = mats({ [I] = 8, [X] = 6 }),
+		requires = { discovered = { "R05" }, dna = { Water = { min = 30 }, CosmicEnergy = { min = 15 }, Temperature = { max = 45 } } },
+		effects = { dna = { Temperature = -6, CosmicEnergy = 4 }, formations = { IceSpikes = 1 } },
+		repeats = { mode = "once" },
+		discoveryReward = { credits = 90, xp = 60 },
+		mastery = { requires = { discovered = { "R24" } }, reward = { credits = 150, xp = 80 }, hint = "Light the polar aurora." },
+		effect = "frozen",
+		preview = { headline = "Ice towers rise." },
+	},
+	R13 = {
+		name = "Plasma Veins",
+		description = "Fuse Magma, Crystal and Plasma. Bright energy structures glow beneath the crust.",
+		category = "cosmic",
+		cost = mats({ [M] = 6, [X] = 6, [P] = 6 }),
+		requires = { discovered = { "R03", "R05" }, dna = { Temperature = { min = 50 }, CosmicEnergy = { min = 20 } } },
+		effects = { dna = { CosmicEnergy = 8, Temperature = 4 }, formations = { PlasmaFissures = 1 } },
+		repeats = { mode = "once" },
+		discoveryReward = { credits = 90, xp = 60 },
+		mastery = { requires = { discovered = { "R04", "R14" } }, reward = { credits = 150, xp = 80 }, hint = "Erupt the crust and make crystals resonate." },
+		effect = "cosmic",
+		preview = { headline = "Plasma fissures glow." },
+	},
+	R14 = {
+		name = "Crystal Resonance",
+		description = "Charge several crystal clusters at once. They resonate and raise a giant crystal arch.",
+		category = "crystal",
+		branch = "Crystal",
+		cost = mats({ [X] = 10, [P] = 6 }),
+		requires = { stage = { min = 2 }, formations = { CrystalCluster = 2 }, dna = { CosmicEnergy = { min = 30 } } },
+		effects = { dna = { CosmicEnergy = 10 }, formations = { ResonanceArch = 1 } },
+		repeats = { mode = "once" },
+		discoveryReward = { credits = 120, xp = 80, materials = { [K] = 1 } },
+		mastery = { requires = { discovered = { "R28" } }, reward = { credits = 200, xp = 100 }, hint = "Grow a giant crystal spire." },
+		effect = "crystal",
+		preview = { headline = "Crystals resonate into an arch." },
+	},
+	R15 = {
+		name = "Volcanic Awakening",
+		description = "Drive a scorching world past its limit with Magma and a Catalyst. A volcano rises.",
+		category = "thermal",
+		branch = "Volcanic",
+		cost = mats({ [M] = 15, [K] = 1 }),
+		requires = { discovered = { "R04" }, stage = { min = 2 }, dna = { Temperature = { min = 80 } } },
+		effects = { dna = { Temperature = 5, CosmicEnergy = 2 }, formations = { VolcanicMountain = 1 } },
+		repeats = { mode = "once" },
+		discoveryReward = { credits = 120, xp = 80 },
+		mastery = { requires = { discovered = { "R27" } }, reward = { credits = 200, xp = 100 }, hint = "Forge the Eternal Core." },
+		effect = "volcanic",
+		preview = { headline = "The planet trembles; a volcano rises." },
+	},
+	R16 = {
+		name = "Celestial Bloom",
+		description = "Bathe a thriving specialized world in cosmic light. A rare celestial flora blooms.",
+		category = "life",
+		branch = "Living",
+		cost = mats({ [B] = 10, [P] = 8, [K] = 1 }),
+		requires = { discovered = { "R11" }, stage = { min = 3 }, dna = { Life = { min = 40 }, CosmicEnergy = { min = 35 } } },
+		effects = { dna = { Life = 5, CosmicEnergy = 5 }, formations = { CelestialFlora = 1 } },
+		repeats = { mode = "once" },
+		discoveryReward = { credits = 200, xp = 120, cosmetic = "Ring_Celestial" },
+		mastery = { requires = { stage = { min = 4 } }, reward = { credits = 250, xp = 120 }, hint = "Reach an Advanced World." },
+		effect = "cosmic",
+		preview = { headline = "Rare celestial flora blooms." },
+	},
+
+	-- ENVIRONMENT TUNING (repeatable; how players steer DNA in both directions) ----------------------
+	R17 = {
+		name = "Cooling Shower",
+		description = "Rain Ice Matter across the planet: cooler and wetter.",
+		category = "tuning",
+		cost = mats({ [I] = 4 }),
+		requires = { discovered = { "R01" } },
+		effects = { dna = { Temperature = -6, Water = 5 } },
+		repeats = { mode = "unlimited" },
+		discoveryReward = { credits = 15, xp = 10 },
+		mastery = { requires = { completions = 5, stage = { min = 2 } }, reward = { credits = 80, xp = 40 }, hint = "Use it 5 times on a terraforming world." },
+		effect = "minor",
+		preview = { headline = "Cooler and wetter." },
+	},
+	R18 = {
+		name = "Heat Surge",
+		description = "Pulse Magma Matter through the crust: warmer.",
+		category = "tuning",
+		cost = mats({ [M] = 4 }),
+		requires = { discovered = { "R03" } },
+		effects = { dna = { Temperature = 8 } },
+		repeats = { mode = "unlimited" },
+		discoveryReward = { credits = 15, xp = 10 },
+		mastery = { requires = { completions = 5, stage = { min = 2 } }, reward = { credits = 80, xp = 40 }, hint = "Use it 5 times on a terraforming world." },
+		effect = "minor",
+		preview = { headline = "Warmer." },
+	},
+	R19 = {
+		name = "Evaporation",
+		description = "Boil part of the water away with Magma Matter: drier and slightly warmer.",
+		category = "tuning",
+		cost = mats({ [M] = 3 }),
+		requires = { discovered = { "R02" } },
+		effects = { dna = { Water = -8, Temperature = 2 } },
+		repeats = { mode = "unlimited" },
+		discoveryReward = { credits = 15, xp = 10 },
+		mastery = { requires = { completions = 3, stage = { min = 2 } }, reward = { credits = 80, xp = 40 }, hint = "Use it 3 times on a terraforming world." },
+		effect = "minor",
+		preview = { headline = "Drier." },
+	},
+	R20 = {
+		name = "Energy Grounding",
+		description = "Bury Crystal Fragments to absorb excess cosmic charge.",
+		category = "tuning",
+		cost = mats({ [X] = 3 }),
+		requires = { discovered = { "R05" } },
+		effects = { dna = { CosmicEnergy = -8 } },
+		repeats = { mode = "unlimited" },
+		discoveryReward = { credits = 15, xp = 10 },
+		mastery = { requires = { completions = 3, stage = { min = 2 } }, reward = { credits = 80, xp = 40 }, hint = "Use it 3 times on a terraforming world." },
+		effect = "minor",
+		preview = { headline = "Less cosmic energy." },
+	},
+	-- Counterpart of R20: without an unlimited way back up, grounding could permanently drop Cosmic Energy
+	-- below the Crystal capstone threshold (found by the softlock fuzz test).
+	R30 = {
+		name = "Stellar Charge",
+		description = "Release Plasma Matter into the upper atmosphere to recharge the planet's cosmic field.",
+		category = "tuning",
+		cost = mats({ [P] = 4 }),
+		requires = { discovered = { "R06" } },
+		effects = { dna = { CosmicEnergy = 6 } },
+		repeats = { mode = "unlimited" },
+		discoveryReward = { credits = 15, xp = 10 },
+		mastery = { requires = { completions = 3, stage = { min = 2 } }, reward = { credits = 80, xp = 40 }, hint = "Use it 3 times on a terraforming world." },
+		effect = "minor",
+		preview = { headline = "More cosmic energy." },
+	},
+
+	-- BRANCH REACTIONS (require the specialization) ----------------------------------------------------
+	R21 = {
+		name = "Sacred Springs",
+		description = "Living World: channel water and life into a cascading waterfall.",
+		category = "branch",
+		branch = "Living",
+		cost = mats({ [B] = 10, [I] = 12 }),
+		requires = { branch = "Living", dna = { Water = { min = 45 } } },
+		effects = { dna = { Water = 5, Life = 5 }, formations = { LivingWaterfall = 1 } },
+		repeats = { mode = "once" },
+		discoveryReward = { credits = 150, xp = 100 },
+		mastery = { requires = { stage = { min = 4 } }, reward = { credits = 200, xp = 100 }, hint = "Reach an Advanced World." },
+		effect = "living",
+		preview = { headline = "A living waterfall." },
+	},
+	R22 = {
+		name = "World Tree",
+		description = "Living World capstone: awaken the Ancient Tree into a Giant World Tree.",
+		category = "branch",
+		branch = "Living",
+		cost = mats({ [B] = 20, [P] = 8, [K] = 3 }),
+		requires = { branch = "Living", discovered = { "R10", "R21" }, formations = { AncientTree = 1 }, dna = { Life = { min = 60 } } },
+		effects = { dna = { Life = 10 }, formations = { WorldTree = 1 } },
+		repeats = { mode = "once" },
+		discoveryReward = { credits = 300, xp = 200 },
+		mastery = { requires = { discovered = { "R16" } }, reward = { credits = 300, xp = 150 }, hint = "Bloom the celestial flora." },
+		effect = "living",
+		preview = { headline = "The World Tree rises." },
+	},
+	R23 = {
+		name = "Frozen Caverns",
+		description = "Frozen World: carve a glowing cave through deep blue ice.",
+		category = "branch",
+		branch = "Frozen",
+		cost = mats({ [I] = 15, [X] = 10 }),
+		requires = { branch = "Frozen", dna = { Temperature = { max = 20 } } },
+		effects = { dna = { Temperature = -5 }, formations = { CrystalIceCave = 1 } },
+		repeats = { mode = "once" },
+		discoveryReward = { credits = 150, xp = 100 },
+		mastery = { requires = { stage = { min = 4 } }, reward = { credits = 200, xp = 100 }, hint = "Reach an Advanced World." },
+		effect = "frozen",
+		preview = { headline = "A crystal ice cave." },
+	},
+	R24 = {
+		name = "Polar Aurora",
+		description = "Frozen World: charge the polar sky with Plasma until auroras dance.",
+		category = "branch",
+		branch = "Frozen",
+		cost = mats({ [I] = 10, [P] = 10 }),
+		requires = { branch = "Frozen", dna = { CosmicEnergy = { min = 15 } } },
+		effects = { dna = { CosmicEnergy = 5 }, formations = { AuroraField = 1 } },
+		repeats = { mode = "once" },
+		discoveryReward = { credits = 150, xp = 100 },
+		mastery = { requires = { stage = { min = 4 } }, reward = { credits = 200, xp = 100 }, hint = "Reach an Advanced World." },
+		effect = "frozen",
+		preview = { headline = "Auroras over the ice." },
+	},
+	R25 = {
+		name = "Frozen Crown",
+		description = "Frozen World capstone: raise a crown of colossal ice at the south pole.",
+		category = "branch",
+		branch = "Frozen",
+		cost = mats({ [I] = 25, [X] = 14, [K] = 3 }),
+		requires = { branch = "Frozen", discovered = { "R23", "R24" }, dna = { Temperature = { max = 15 } } },
+		effects = { dna = { Temperature = -5, Water = 5 }, formations = { FrozenCrown = 1 } },
+		repeats = { mode = "once" },
+		discoveryReward = { credits = 300, xp = 200 },
+		mastery = { requires = { discovered = { "R12" } }, reward = { credits = 300, xp = 150 }, hint = "Raise ice towers too." },
+		effect = "frozen",
+		preview = { headline = "The Frozen Crown forms." },
+	},
+	R26 = {
+		name = "Magma Rivers",
+		description = "Volcanic World: let molten rock carve rivers across the surface.",
+		category = "branch",
+		branch = "Volcanic",
+		cost = mats({ [M] = 16, [X] = 6 }),
+		requires = { branch = "Volcanic", dna = { Temperature = { min = 80 } } },
+		effects = { dna = { Temperature = 3 }, formations = { MagmaRiver = 1 } },
+		repeats = { mode = "once" },
+		discoveryReward = { credits = 150, xp = 100 },
+		mastery = { requires = { stage = { min = 4 } }, reward = { credits = 200, xp = 100 }, hint = "Reach an Advanced World." },
+		effect = "volcanic",
+		preview = { headline = "Rivers of magma." },
+	},
+	R27 = {
+		name = "Eternal Core",
+		description = "Volcanic World capstone: lift a captive star of magma above the crust.",
+		category = "branch",
+		branch = "Volcanic",
+		cost = mats({ [M] = 25, [P] = 14, [K] = 3 }),
+		requires = { branch = "Volcanic", discovered = { "R15", "R26" }, dna = { Temperature = { min = 90 } } },
+		effects = { dna = { Temperature = 5, CosmicEnergy = 5 }, formations = { EternalCore = 1 } },
+		repeats = { mode = "once" },
+		discoveryReward = { credits = 300, xp = 200 },
+		mastery = { requires = { discovered = { "R13" } }, reward = { credits = 300, xp = 150 }, hint = "Forge plasma veins as well." },
+		effect = "volcanic",
+		preview = { headline = "The Eternal Core ignites." },
+	},
+	R28 = {
+		name = "Crystal Ascension",
+		description = "Crystal World: grow a single crystal taller than a mountain.",
+		category = "branch",
+		branch = "Crystal",
+		cost = mats({ [X] = 18, [P] = 10 }),
+		requires = { branch = "Crystal", discovered = { "R14" }, dna = { CosmicEnergy = { min = 55 } } },
+		effects = { dna = { CosmicEnergy = 8 }, formations = { GiantCrystalSpire = 1 } },
+		repeats = { mode = "once" },
+		discoveryReward = { credits = 150, xp = 100 },
+		mastery = { requires = { stage = { min = 4 } }, reward = { credits = 200, xp = 100 }, hint = "Reach an Advanced World." },
+		effect = "crystal",
+		preview = { headline = "A giant crystal spire." },
+	},
+	R29 = {
+		name = "Celestial Prism",
+		description = "Crystal World capstone: suspend a prism that splits starlight over the planet.",
+		category = "branch",
+		branch = "Crystal",
+		cost = mats({ [X] = 25, [P] = 14, [K] = 3 }),
+		requires = { branch = "Crystal", discovered = { "R28" }, dna = { CosmicEnergy = { min = 70 } } },
+		effects = { dna = { CosmicEnergy = 10 }, formations = { CelestialPrism = 1 } },
+		repeats = { mode = "once" },
+		discoveryReward = { credits = 300, xp = 200 },
+		mastery = { requires = { discovered = { "R12" } }, reward = { credits = 300, xp = 150 }, hint = "Freeze crystals into ice towers." },
+		effect = "crystal",
+		preview = { headline = "The Celestial Prism ignites." },
+	},
+}
+
+local ORDER = {}
+for id, def in DEFS do
+	def.id = id
+	def.major = def.category ~= "tuning"
+	table.insert(ORDER, id)
+end
+table.sort(ORDER)
+
+ReactionRegistry.DEFS = DEFS
+ReactionRegistry.ORDER = ORDER
+
+function ReactionRegistry.get(id: any): any
+	return if type(id) == "string" then DEFS[id] else nil
+end
+
+-- Reaction ids whose cost includes `materialId` (material "reaction compatibility").
+function ReactionRegistry.reactionsUsing(materialId: string): { string }
+	local out = {}
+	for _, id in ORDER do
+		local c = DEFS[id].cost.materials
+		if c and c[materialId] then
+			table.insert(out, id)
+		end
+	end
+	return out
+end
+
+return ReactionRegistry

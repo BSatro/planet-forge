@@ -16,6 +16,12 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done · `(H)` needs the human (
 - [ ] (H) In the Claude desktop app, connect the repo folder ("Add folder") so Claude can edit files directly
 
 ## M0 — Skeleton
+Repo bootstrap (2026-11-24, see CHANGELOG)
+- [x] M0.0a `default.project.json` (Rojo 7.5.1 via rokit.toml): code containers only; every other instance stays place-owned
+- [x] M0.0b Extracted all 163 scripts from `place/planet-forge.rbxl` (saved 2026-11-24 18:54) into `src/` + `tests/`, verified byte-for-byte
+- [ ] (H) M0.0c First `rojo serve` + Studio plugin Connect against the **local** place copy: the initial diff should show 0 changes. Then commit
+- [ ] (H) M0.0d Export `ReplicatedStorage.PF_Assets` to `assets/*.rbxm` (ADR-002) — still place-owned for now
+- [ ] M0.0e Reconcile B-0.x / A-0.x below with the code that already exists (no `Contracts/`, `Net`, `Trove`, `Validate`, `Seed` yet; `RemoteGuard` lives in `src/server/Net/`)
 Developer B
 - [ ] B-0.1 `Contracts/Types`, `Remotes`, `ResultCodes`, `Version` exactly as in INTERFACES.md
 - [ ] B-0.2 `Util/Signal`, `Util/Trove`, `Util/Validate`, `Util/Seed`
